@@ -105,7 +105,7 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
 <body>
 <main>
 <header>
-  <span class="dot" id="dot"></span><h1>Skidlights <small style="font-size:12px;color:var(--mute);font-weight:400">v6</small></h1><span id="stat">Not connected</span>
+  <span class="dot" id="dot"></span><h1>Skidlights <small style="font-size:12px;color:var(--mute);font-weight:400">v7</small></h1><span id="stat">Not connected</span>
 </header>
 <div class="row"><button class="pri" id="conn">Connect</button><button id="add" style="flex:none">+ Add</button><button id="trOpen">Track mode</button></div>
 <p id="msg" hidden></p>
@@ -149,6 +149,8 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
     <input type="text" id="hex" maxlength="7" spellcheck="false" autocapitalize="characters" aria-label="Hex colour">
     <button id="fav" style="flex:none">+ Swatch</button>
   </div>
+  <label class="s" for="order">LED colour order (change if Red doesn't look red)</label>
+  <select id="order"></select>
 </section>
 
 <section class="card">
@@ -270,7 +272,7 @@ const NEW3 = () => [
 ];
 const DEF = {
   ver: 3, holdC: '#FFFFFF', rpm: { start: 4000, shift: 7000 },
-  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, saved: {}, active: null, wmode: 'auto',
+  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, saved: {}, active: null, wmode: 'auto', order: 'GBR',
   fx: fx('flicker', '#FF5A00', '#7A00FF', 50),
   swatches: ['#FF0000', '#FF5A00', '#FFB300', '#FFFFFF', '#9FD8FF', '#0040FF', '#8A00FF', '#39FF14'],
   presets: [
@@ -291,6 +293,8 @@ let stored = {};
 try { stored = JSON.parse(localStorage.getItem('sp105e-v2') || '{}') || {}; } catch (e) {}
 const S = Object.assign({}, DEF, stored);
 if (stored.presets && !stored.ver) { S.presets = S.presets.concat(NEW3()); S.ver = 3; }
+/* v7: Blake's test proved 5-byte packets change the lights (colours were just channel-swapped), so reset once to that */
+if (!stored.order) { S.fmt = '5'; S.wmode = 'auto'; }
 const save = () => { try { localStorage.setItem('sp105e-v2', JSON.stringify(S)); } catch (e) {} };
 
 /* colour maths */
@@ -330,6 +334,9 @@ function frame(d1, d2, d3, cmd) {
   if (S.fmt === '6') return new Uint8Array([0x38, d1, d2, d3, cmd, 0x83]);
   return new Uint8Array([0x38, d1, d2, d3, cmd]);
 }
+/* LED colour order: which real channel each byte drives. Blake's strip is GBR. */
+const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];
+const colFrame = rgb => { const o = [...(S.order || 'RGB')].map(ch => rgb['RGB'.indexOf(ch)]); return frame(o[0], o[1], o[2], 0x1E); };
 function send(bytes, key) {
   const ts = targets();
   if (!ts.length) { log('nt', 'not sent (no controller): ' + bhex(bytes)); return; }
@@ -359,7 +366,7 @@ async function pump(c) {
   c.queue = []; c.busy = false;
 }
 const CMD = {
-  color: () => send(frame(S.rgb[0], S.rgb[1], S.rgb[2], 0x1E), 'color'),
+  color: () => send(colFrame(S.rgb), 'color'),
   mode: () => send(frame(S.mode, 0, 0, 0x2C), 'mode'),
   speed: () => send(frame(S.speed, 0, 0, 0x03), 'speed'),
   bri: () => send(frame(S.bri, 0, 0, 0x2A), 'bri'),
@@ -595,7 +602,7 @@ function fxColor(st, s, odd) {
     default: return scale(mix(A, B, fxLevel), 0.12 + 0.88 * fxLevel);
   }
 }
-function sendFx(c, rgb) { const k = rgb.join(); if (c.lastFx === k) return; c.lastFx = k; enqueue(c, frame(rgb[0], rgb[1], rgb[2], 0x1E), 'color', true); }
+function sendFx(c, rgb) { const k = rgb.join(); if (c.lastFx === k) return; c.lastFx = k; enqueue(c, colFrame(rgb), 'color', true); }
 
 /* hold-to-flash overrides everything while a finger is on the button */
 let hold = false, holdT0 = 0, holdTimer = null;
@@ -638,7 +645,7 @@ function holdOff() {
   if (holdTimer) {
     clearInterval(holdTimer); holdTimer = null;
     if (S.kind === 'color') CMD.color(); else if (S.kind === 'mode') CMD.mode(); else if (S.kind === 'auto') CMD.auto();
-    else if (lastFxRgb) send(frame(lastFxRgb[0], lastFxRgb[1], lastFxRgb[2], 0x1E), 'color');
+    else if (lastFxRgb) send(colFrame(lastFxRgb), 'color');
     paint();
   }
 }
@@ -798,6 +805,7 @@ function paint() {
   if (document.activeElement !== $('#hex')) $('#hex').value = hx;
   $('#pick').value = hx.toLowerCase();
   $('#fmt').value = S.fmt;
+  $('#order').value = S.order;
   $('#sw').innerHTML = S.swatches.map(c => `<button data-c="${c}" style="background:${c}" class="${S.kind === 'color' && c === hx ? 'sel' : ''}" aria-label="${c}"></button>`).join('');
   save();
 }
@@ -867,6 +875,8 @@ $('#spd').oninput = e => { S.speed = +e.target.value; CMD.speed(); paint(); };
 $('#pick').oninput = e => { manual(); setRGB(fromHex(e.target.value)); };
 $('#hex').onchange = e => { const v = fromHex(e.target.value); if (v) { manual(); setRGB(v); } else { toast('Use a 6-digit hex like #FF2200'); paint(); } };
 $('#sw').onclick = e => { const c = e.target.dataset.c; if (c) { manual(); setRGB(fromHex(c)); renderPresets(); } };
+$('#order').innerHTML = ORDERS.map(o => `<option value="${o}">${o}${o === 'GBR' ? ' (your strip)' : ''}</option>`).join('');
+$('#order').onchange = e => { S.order = e.target.value; save(); for (const c of conns.values()) c.lastFx = ''; if (S.kind === 'color') CMD.color(); toast('Colour order ' + S.order); };
 $('#fav').onclick = () => { const h = toHex(S.rgb); if (!S.swatches.includes(h)) { S.swatches = [h, ...S.swatches].slice(0, 16); paint(); toast('Added ' + h); } };
 $('#mPrev').onclick = () => { manual(); setMode(S.mode - 1); renderPresets(); };
 $('#mNext').onclick = () => { manual(); setMode(S.mode + 1); renderPresets(); };
@@ -939,7 +949,7 @@ const PROBES = [
 let probeI = -1, probeTimer = null;
 function probeSend() {
   const p = PROBES[probeI]; S.fmt = p.fmt; S.wmode = p.w;
-  const b = frame(p.rgb[0], p.rgb[1], p.rgb[2], 0x1E);
+  const b = colFrame(p.rgb);
   for (const c of targets()) { c.lastFx = ''; enqueue(c, b, 'color', false); }
 }
 function probeStep() {
