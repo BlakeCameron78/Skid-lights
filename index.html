@@ -60,6 +60,7 @@ input[type=color]{width:52px;height:44px;border:0;background:none;padding:0;flex
 .dev small.st{flex:none;color:var(--mute);font-size:12px}
 #msg{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:#1c1c21;border:1px solid var(--line);font-size:14px}
 #msg.bad{background:#2a1010;border-color:#7a2222}
+.probe{background:#1d1a08;border:1px solid #6a5a10;border-radius:12px;padding:12px;margin-bottom:8px}.probe p{margin:0 0 10px;font-size:15px}
 .mode{display:grid;grid-template-columns:56px minmax(0,1fr) 56px;gap:8px;align-items:center}
 .mode input{text-align:center;font-size:22px;font-weight:600}
 .fxc{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:14px;font-size:14px;color:var(--mute)}
@@ -104,7 +105,7 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
 <body>
 <main>
 <header>
-  <span class="dot" id="dot"></span><h1>Skidlights <small style="font-size:12px;color:var(--mute);font-weight:400">v5</small></h1><span id="stat">Not connected</span>
+  <span class="dot" id="dot"></span><h1>Skidlights <small style="font-size:12px;color:var(--mute);font-weight:400">v6</small></h1><span id="stat">Not connected</span>
 </header>
 <div class="row"><button class="pri" id="conn">Connect</button><button id="add" style="flex:none">+ Add</button><button id="trOpen">Track mode</button></div>
 <p id="msg" hidden></p>
@@ -117,6 +118,11 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
 <section class="card">
   <h2>Controllers</h2>
   <div id="devs"></div>
+  <button id="probe" style="width:100%;margin-bottom:6px">Lights not changing? Run test</button>
+  <div id="probeP" class="probe" hidden>
+    <p id="probeQ"></p>
+    <div class="row"><button id="pYes" class="pri">Yes</button><button id="pNo">No</button><button id="pStop" style="flex:none">Stop</button></div>
+  </div>
   <div id="tgtWrap" hidden><label class="s">Sending to</label><div class="chips" id="tgt"></div></div>
   <p class="h">Every controller you connect is saved. Next time, Connect only looks for your saved ones. While this page is open it reconnects by itself whenever one powers back up, e.g. a reverse controller each time you select reverse. Name each one (Reverse, Left, Right); × forgets it. Use + Add for a new controller.</p>
 </section>
@@ -264,7 +270,7 @@ const NEW3 = () => [
 ];
 const DEF = {
   ver: 3, holdC: '#FFFFFF', rpm: { start: 4000, shift: 7000 },
-  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, saved: {}, active: null,
+  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, saved: {}, active: null, wmode: 'auto',
   fx: fx('flicker', '#FF5A00', '#7A00FF', 50),
   swatches: ['#FF0000', '#FF5A00', '#FFB300', '#FFFFFF', '#9FD8FF', '#0040FF', '#8A00FF', '#39FF14'],
   presets: [
@@ -339,11 +345,15 @@ async function pump(c) {
     const { bytes, quiet } = c.queue.shift();
     if (!quiet) log('tx', (conns.size > 1 ? cname(c) + ' ' : '') + 'TX ' + bhex(bytes));
     try {
-      const ch = c.ch;
-      if (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) await ch.writeValueWithoutResponse(bytes);
-      else if (ch.writeValueWithResponse) await ch.writeValueWithResponse(bytes);
-      else await ch.writeValue(bytes);
-    } catch (e) { log('er', cname(c) + ' write failed: ' + e.message); }
+      const ch = c.ch, p = ch.properties;
+      let noResp = !!(p.writeWithoutResponse && ch.writeValueWithoutResponse);
+      if (S.wmode === 'flip') noResp = !noResp;
+      const w = noResp && ch.writeValueWithoutResponse ? ch.writeValueWithoutResponse(bytes)
+        : ch.writeValueWithResponse ? ch.writeValueWithResponse(bytes) : ch.writeValue(bytes);
+      /* a write the controller never acknowledges must not jam every later write */
+      const r = await Promise.race([w.then(() => 'ok'), sleep(1200).then(() => 'timeout')]);
+      if (r === 'timeout') log('er', cname(c) + ' write not acknowledged (' + (noResp ? 'no-response' : 'with-response') + ' mode)');
+    } catch (e) { log('er', cname(c) + ' write failed: ' + errText(e)); }
     await sleep(60);
   }
   c.queue = []; c.busy = false;
@@ -380,7 +390,8 @@ async function attach(c) {
   const server = await c.dev.gatt.connect();
   c.ch = await pickChar(server);
   if (c.ch.properties.notify) { try { await c.ch.startNotifications(); c.ch.addEventListener('characteristicvaluechanged', e => onNotify(c, e)); } catch (e) { log('nt', 'notify not available'); } }
-  log('nt', cname(c) + ' connected via ' + c.ch.uuid.slice(4, 8));
+  const pr = c.ch.properties;
+  log('nt', `${cname(c)} connected via ${c.ch.uuid.slice(4, 8)} [${pr.write ? 'write ' : ''}${pr.writeWithoutResponse ? 'write-no-resp ' : ''}${pr.notify ? 'notify ' : ''}${pr.read ? 'read' : ''}]`);
   status(); renderDevs();
 }
 /* connect + remember: saved controllers live in S.saved (id -> advertised name) */
@@ -915,6 +926,43 @@ window.addEventListener('blur', holdOff);
 $('#holdC').oninput = e => { S.holdC = e.target.value.toUpperCase(); save(); };
 $('#trStop').onclick = () => { manual(); paint(); renderPresets(); toast('Stopped'); };
 $('#trPwr').onclick = () => $('#pwr').click();
+
+/* colour-coded command test: each packet format shows a different colour, user says which one appeared */
+const PROBES = [
+  { fmt: '5', w: 'auto', rgb: [255, 0, 0], name: 'RED' },
+  { fmt: '5', w: 'flip', rgb: [0, 255, 0], name: 'GREEN' },
+  { fmt: '6', w: 'auto', rgb: [0, 0, 255], name: 'BLUE' },
+  { fmt: '4', w: 'auto', rgb: [255, 0, 255], name: 'PURPLE' },
+  { fmt: '6', w: 'flip', rgb: [255, 255, 255], name: 'WHITE' },
+  { fmt: '4', w: 'flip', rgb: [255, 150, 0], name: 'ORANGE' }
+];
+let probeI = -1, probeTimer = null;
+function probeSend() {
+  const p = PROBES[probeI]; S.fmt = p.fmt; S.wmode = p.w;
+  const b = frame(p.rgb[0], p.rgb[1], p.rgb[2], 0x1E);
+  for (const c of targets()) { c.lastFx = ''; enqueue(c, b, 'color', false); }
+}
+function probeStep() {
+  clearInterval(probeTimer);
+  if (probeI >= PROBES.length) { probeEnd(false); return; }
+  const p = PROBES[probeI];
+  $('#probeQ').innerHTML = `Test ${probeI + 1} of ${PROBES.length}: watch all the rear lights. Did anything go <b>${p.name}</b>?`;
+  log('nt', `test ${probeI + 1}: ${p.name}, ${p.fmt}-byte, write ${p.w}`);
+  probeSend(); probeTimer = setInterval(probeSend, 1500);
+}
+function probeEnd(ok) {
+  clearInterval(probeTimer); probeTimer = null; $('#probeP').hidden = true;
+  if (ok) { const p = PROBES[probeI]; say(`Locked in: ${p.fmt}-byte packets, write mode ${p.w}. Colours and effects should work now.`); }
+  else { S.fmt = '5'; S.wmode = 'auto'; say('None of the tests changed the lights. Open Lab, tap Copy log and send it to Claude.', true); }
+  save(); paint();
+}
+$('#probe').onclick = () => {
+  if (!live().length) { say('Connect first (top right should say "1 connected"), then run the test.', true); return; }
+  manual(); say(''); probeI = 0; $('#probeP').hidden = false; probeStep();
+};
+$('#pYes').onclick = () => probeEnd(true);
+$('#pNo').onclick = () => { probeI++; probeStep(); };
+$('#pStop').onclick = () => { clearInterval(probeTimer); probeTimer = null; $('#probeP').hidden = true; S.fmt = '5'; S.wmode = 'auto'; save(); paint(); };
 
 /* lab */
 $('#fmt').onchange = e => { S.fmt = e.target.value; save(); };
