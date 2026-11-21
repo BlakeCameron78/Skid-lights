@@ -57,6 +57,7 @@ input[type=color]{width:52px;height:44px;border:0;background:none;padding:0;flex
 .chips button{flex:none;min-height:40px;border-radius:20px;padding:0 14px;font-size:15px}
 .chips button.sel{background:var(--ink);color:#111;border-color:var(--ink);font-weight:600}
 .dev{display:flex;gap:8px;align-items:center;margin-bottom:8px}.dev input{flex:1}.dev button{flex:none;min-width:44px;padding:0 10px}
+.dev small.st{flex:none;color:var(--mute);font-size:12px}
 .mode{display:grid;grid-template-columns:56px minmax(0,1fr) 56px;gap:8px;align-items:center}
 .mode input{text-align:center;font-size:22px;font-weight:600}
 .fxc{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:14px;font-size:14px;color:var(--mute)}
@@ -103,7 +104,7 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
 <header>
   <span class="dot" id="dot"></span><h1>Skidlights</h1><span id="stat">Not connected</span>
 </header>
-<div class="row"><button class="pri" id="conn">+ Controller</button><button id="trOpen">Track mode</button></div>
+<div class="row"><button class="pri" id="conn">Connect</button><button id="add" style="flex:none">+ Add</button><button id="trOpen">Track mode</button></div>
 
 <div class="card" id="nobt">
   <h2>This browser can't do Bluetooth</h2>
@@ -114,7 +115,7 @@ p.h{color:var(--mute);font-size:14px;margin:8px 0}
   <h2>Controllers</h2>
   <div id="devs"></div>
   <div id="tgtWrap" hidden><label class="s">Sending to</label><div class="chips" id="tgt"></div></div>
-  <p class="h">Name each one (Reverse, Left, Right). A controller only shows up while it has power, so if one runs off the reverse circuit, ignition on and in reverse to connect it. It keeps whatever you set after power-off.</p>
+  <p class="h">Every controller you connect is saved. Next time, Connect only looks for your saved ones. While this page is open it reconnects by itself whenever one powers back up, e.g. a reverse controller each time you select reverse. Name each one (Reverse, Left, Right); × forgets it. Use + Add for a new controller.</p>
 </section>
 
 <section class="card">
@@ -257,7 +258,7 @@ const NEW3 = () => [
 ];
 const DEF = {
   ver: 3, holdC: '#FFFFFF', rpm: { start: 4000, shift: 7000 },
-  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, active: null,
+  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, saved: {}, active: null,
   fx: fx('flicker', '#FF5A00', '#7A00FF', 50),
   swatches: ['#FF0000', '#FF5A00', '#FFB300', '#FFFFFF', '#9FD8FF', '#0040FF', '#8A00FF', '#39FF14'],
   presets: [
@@ -306,9 +307,11 @@ const live = () => [...conns.values()].filter(c => c.ch);
 const targets = () => live().filter(c => S.target === 'all' || S.target === c.dev.id);
 
 function status() {
-  const n = live().length;
-  $('#stat').textContent = n ? n + ' connected' : 'Not connected';
-  $('#dot').className = 'dot ' + (n ? 'on' : '');
+  const n = live().length, saved = Object.keys(S.saved).length;
+  const hunting = [...conns.values()].some(c => c.trying && !c.ch);
+  $('#stat').textContent = n ? n + ' connected' : hunting ? 'Searching…' : 'Not connected';
+  $('#dot').className = 'dot ' + (n ? 'on' : hunting ? 'busy' : '');
+  $('#conn').textContent = saved && n >= saved ? 'Connected' : 'Connect';
 }
 function frame(d1, d2, d3, cmd) {
   if (S.fmt === '4') return new Uint8Array([d1, d2, d3, cmd]);
@@ -374,30 +377,95 @@ async function attach(c) {
   log('nt', cname(c) + ' connected via ' + c.ch.uuid.slice(4, 8));
   status(); renderDevs();
 }
-async function addController() {
-  if (!navigator.bluetooth) { $('#nobt').style.display = 'block'; toast('No Bluetooth in this browser'); return; }
-  const opts = $('#all').checked ? { acceptAllDevices: true, optionalServices: ALT_SVCS }
-    : { filters: [{ namePrefix: 'SP' }, { services: [SVC] }], optionalServices: ALT_SVCS };
-  let dev;
-  try {
-    try { dev = await navigator.bluetooth.requestDevice(opts); }
-    catch (e) { if (e.name !== 'TypeError') throw e; delete opts.optionalServices; dev = await navigator.bluetooth.requestDevice(opts); }
-  } catch (e) { if (e.name !== 'NotFoundError') { log('er', e.name + ': ' + e.message); toast(e.message); } return; }
+/* connect + remember: saved controllers live in S.saved (id -> advertised name) */
+function noBT() { if (navigator.bluetooth) return false; $('#nobt').style.display = 'block'; toast('No Bluetooth in this browser'); return true; }
+async function pickDevice(savedOnly) {
+  const names = [...new Set(Object.values(S.saved).map(v => v.n).filter(Boolean))];
+  let opts;
+  if (savedOnly && names.length) opts = { filters: names.map(n => ({ name: n })), optionalServices: ALT_SVCS };
+  else if ($('#all').checked) opts = { acceptAllDevices: true, optionalServices: ALT_SVCS };
+  else opts = { filters: [{ namePrefix: 'SP' }, { services: [SVC] }], optionalServices: ALT_SVCS };
+  try { return await navigator.bluetooth.requestDevice(opts); }
+  catch (e) { if (e.name !== 'TypeError') throw e; delete opts.optionalServices; return await navigator.bluetooth.requestDevice(opts); }
+}
+function track(dev) {
   let c = conns.get(dev.id);
-  if (c && c.ch) { toast(cname(c) + ' is already connected'); return; }
-  if (!c) { c = { dev, ch: null, queue: [], busy: false, user: false, lastFx: '' }; conns.set(dev.id, c); dev.addEventListener('gattserverdisconnected', () => onDisc(c)); }
-  c.user = false;
-  try { await attach(c); toast('Connected ' + cname(c)); }
-  catch (e) { log('er', 'connect failed: ' + e.message); toast('Connect failed: ' + e.message); conns.delete(dev.id); status(); renderDevs(); }
+  if (!c) {
+    c = { dev, ch: null, queue: [], busy: false, user: false, lastFx: '', trying: false };
+    conns.set(dev.id, c);
+    dev.addEventListener('gattserverdisconnected', () => onDisc(c));
+  }
+  return c;
+}
+function remember(c) { S.saved[c.dev.id] = { n: c.dev.name || '' }; save(); }
+async function connectDev(dev) {
+  const c = track(dev); c.user = false;
+  if (c.ch) { toast(cname(c) + ' is already connected'); return; }
+  try { await attach(c); remember(c); toast('Connected ' + cname(c)); }
+  catch (e) {
+    log('er', 'connect failed: ' + e.message);
+    if (S.saved[dev.id]) keepTrying(c); else { toast('Connect failed: ' + e.message); conns.delete(dev.id); }
+  }
+  status(); renderDevs();
+}
+async function addController() {
+  if (noBT()) return;
+  let dev;
+  try { dev = await pickDevice(false); } catch (e) { if (e.name !== 'NotFoundError') { log('er', e.name + ': ' + e.message); toast(e.message); } return; }
+  await connectDev(dev);
+}
+async function connectSaved() {
+  if (noBT()) return;
+  if (!Object.keys(S.saved).length) return addController();
+  const known = await permitted();
+  const missing = Object.keys(S.saved).filter(id => !(conns.get(id) || {}).ch);
+  if (!missing.length) { toast('All saved controllers are connected'); return; }
+  const auto = known.filter(d => missing.includes(d.id));
+  if (auto.length) { auto.forEach(d => keepTrying(track(d))); toast('Looking for your controllers…'); return; }
+  let dev;   // browser can't reconnect silently: picker filtered to saved names only
+  try { dev = await pickDevice(true); } catch (e) { if (e.name !== 'NotFoundError') { log('er', e.name + ': ' + e.message); toast(e.message); } return; }
+  await connectDev(dev);
+}
+async function permitted() {
+  if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return [];
+  try { return (await navigator.bluetooth.getDevices()).filter(d => S.saved[d.id]); } catch (e) { return []; }
+}
+function waitAdv(c, ms) {
+  if (!c.dev.watchAdvertisements) return sleep(ms);
+  const ac = new AbortController();
+  return new Promise(res => {
+    const done = () => { clearTimeout(t); ac.abort(); res(); };
+    const t = setTimeout(done, ms);
+    c.dev.addEventListener('advertisementreceived', done, { once: true });
+    c.dev.watchAdvertisements({ signal: ac.signal }).catch(() => {});
+  });
+}
+async function keepTrying(c) {
+  if (c.trying) return;
+  c.trying = true; status(); renderDevs();
+  for (let i = 0; !c.ch && !c.user && S.saved[c.dev.id]; i++) {
+    try { await attach(c); toast(cname(c) + ' reconnected'); break; }
+    catch (e) {
+      if (i === 0) log('nt', cname(c) + ' not reachable yet, will keep trying');
+      await waitAdv(c, i < 5 ? 2500 : 5000);
+    }
+  }
+  c.trying = false; status(); renderDevs();
 }
 async function onDisc(c) {
   c.ch = null; status(); renderDevs();
   log('nt', cname(c) + ' disconnected');
-  if (c.user) return;
-  for (let i = 1; i <= 3 && !c.user && !c.ch; i++) {
-    await sleep(800 * i);
-    try { await attach(c); return; } catch (e) { log('nt', 'reconnect ' + i + '/3 failed: ' + e.message); }
-  }
+  if (!c.user && S.saved[c.dev.id]) { await sleep(600); keepTrying(c); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  for (const c of conns.values()) if (!c.ch && !c.user && S.saved[c.dev.id]) keepTrying(c);
+});
+async function autoStart() {
+  const ds = await permitted();
+  if (!ds.length) return;
+  log('nt', 'auto-connecting ' + ds.length + ' saved controller' + (ds.length > 1 ? 's' : ''));
+  ds.forEach(d => keepTrying(track(d)));
 }
 
 /* live effects */
@@ -721,8 +789,11 @@ function renderShow() {
 }
 function renderDevs() {
   const cs = [...conns.values()];
-  $('#devs').innerHTML = cs.length ? cs.map(c => `<div class="dev"><span class="dot ${c.ch ? 'on' : ''}"></span><input type="text" value="${esc(cname(c))}" data-n="${esc(c.dev.id)}" maxlength="16" aria-label="Controller name">${c.ch ? '' : `<button data-re="${esc(c.dev.id)}">Retry</button>`}<button data-rm="${esc(c.dev.id)}" aria-label="Disconnect">×</button></div>`).join('')
-    : '<p class="h">None connected yet. Tap + Controller.</p>';
+  const row = (id, label, dot, note) => `<div class="dev"><span class="dot ${dot}"></span><input type="text" value="${esc(label)}" data-n="${esc(id)}" maxlength="16" aria-label="Controller name"><small class="st">${note}</small><button data-fg="${esc(id)}" aria-label="Forget ${esc(label)}">×</button></div>`;
+  const rows = cs.map(c => row(c.dev.id, cname(c), c.ch ? 'on' : c.trying ? 'busy' : '', c.ch ? '' : c.trying ? 'searching' : 'offline'))
+    .concat(Object.keys(S.saved).filter(id => !conns.has(id)).map(id => row(id, S.names[id] || S.saved[id].n || 'Controller', '', 'saved')));
+  const ae = document.activeElement, typing = ae && ae.tagName === 'INPUT' && $('#devs').contains(ae);
+  if (!typing) $('#devs').innerHTML = rows.length ? rows.join('') : '<p class="h">None yet. Tap Connect.</p>';
   if (S.target !== 'all' && !conns.has(S.target)) S.target = 'all';
   const chips = [['all', 'All']].concat(cs.map(c => [c.dev.id, cname(c)]))
     .map(([id, l]) => `<button data-t="${esc(id)}" class="${S.target === id ? 'sel' : ''}">${esc(l)}</button>`).join('');
@@ -732,14 +803,15 @@ function renderDevs() {
 }
 
 /* events */
-$('#conn').onclick = addController;
-$('#devs').onclick = async e => {
-  const b = e.target.closest('button'); if (!b) return;
-  const c = conns.get(b.dataset.rm || b.dataset.re); if (!c) return;
-  if (b.dataset.re) { try { await attach(c); } catch (err) { toast('Still not reachable'); } return; }
-  c.user = true; if (c.ch) c.dev.gatt.disconnect(); conns.delete(c.dev.id); status(); renderDevs();
+$('#conn').onclick = connectSaved;
+$('#add').onclick = addController;
+$('#devs').onclick = e => {
+  const b = e.target.closest('button[data-fg]'); if (!b) return;
+  const id = b.dataset.fg, c = conns.get(id);
+  if (c) { c.user = true; if (c.ch) c.dev.gatt.disconnect(); conns.delete(id); }
+  delete S.saved[id]; status(); renderDevs(); toast('Forgotten');
 };
-$('#devs').onchange = e => { const id = e.target.dataset.n; if (id) { S.names[id] = e.target.value.trim(); renderDevs(); } };
+$('#devs').onchange = e => { const id = e.target.dataset.n; if (id) { S.names[id] = e.target.value.trim(); save(); e.target.blur(); setTimeout(renderDevs, 0); } };
 const pickTarget = e => { const t = e.target.closest('button'); if (t && t.dataset.t) { S.target = t.dataset.t; renderDevs(); } };
 $('#tgt').onclick = pickTarget; $('#trT').onclick = pickTarget;
 
@@ -828,7 +900,7 @@ $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(log
 
 if (!navigator.bluetooth) $('#nobt').style.display = 'block';
 if (S.kind === 'fx') S.kind = 'color';
-status(); paint(); paintFx(); renderPresets(); renderDevs();
+status(); paint(); paintFx(); renderPresets(); renderDevs(); autoStart();
 log('nt', 'ready. frame format ' + S.fmt + '-byte');
 }
 </script>
