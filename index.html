@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Skidlights</title>
+<meta name="apple-mobile-web-app-title" content="Skidlights">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%230b0b0d%27/%3E%3Crect x=%2710%27 y=%2726%27 width=%2744%27 height=%2712%27 rx=%276%27 fill=%27%23ff1e1e%27/%3E%3C/svg%3E">
+<style>
+/* VOICE: workshop tool, terse labels
+   IDEA: the tail-light lens itself is the status display
+   PICTURE: lit lens bar in the live colour, chases when a mode runs
+   COLOUR+TYPE: near-black, the live LED colour as the only accent; system sans
+   LAYOUT: one column, thumb-reachable, cards stack top to bottom */
+:root{--bg:#0b0b0d;--card:#151518;--line:#26262b;--ink:#f1f1f3;--mute:#8d8d97;--c:#ff1e1e;--r:16px}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 24px) env(safe-area-inset-left)}
+main{max-width:620px;margin:0 auto;padding:0 14px}
+header{display:flex;align-items:center;gap:10px;padding:14px 0 10px;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font-size:18px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:10px;height:10px;border-radius:50%;background:#555;flex:none}
+.dot.on{background:#2fd06b;box-shadow:0 0 10px #2fd06b}.dot.busy{background:#f5b301}
+#stat{font-size:13px;color:var(--mute);white-space:nowrap}
+button,select,input{font:inherit;color:inherit}
+button{background:#232329;border:1px solid var(--line);border-radius:12px;min-height:44px;padding:0 14px;cursor:pointer}
+button:active{transform:scale(.97)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+.pri{background:var(--ink);color:#111;border-color:var(--ink);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0}
+.card h2{font-size:15px;margin:0 0 12px;color:var(--mute);font-weight:600}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+.lens{position:relative;height:140px;border-radius:22px;background:radial-gradient(120% 140% at 50% 120%,#1d0f10,#09090a);overflow:hidden;border:1px solid #2a2020}
+.lens svg{position:absolute;inset:0;width:100%;height:100%}
+.px{fill:var(--c);filter:drop-shadow(0 0 6px var(--c))}
+.off .px{fill:#2a2a2e;filter:none}
+.run .px{animation:chase 1.2s linear infinite}
+@keyframes chase{0%,100%{opacity:.25}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){.run .px{animation:none}}
+.now{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px}
+.now b{font-size:22px;font-variant-numeric:tabular-nums}.now span{color:var(--mute);font-size:13px;display:block}
+#pwr{width:64px;height:64px;border-radius:50%;flex:none;font-size:26px;padding:0}
+label.s{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
+label.s output{float:right;color:var(--ink);font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:34px;border-radius:17px;background:#26262b;margin:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:30px;height:30px;border-radius:50%;background:#fff;border:3px solid #000;box-shadow:0 1px 4px #000a}
+input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:#fff;border:3px solid #000}
+#hue{background:linear-gradient(90deg,red,#ff0,lime,cyan,blue,#f0f,red)}
+#sat{background:linear-gradient(90deg,#fff,var(--pure,red))}
+.sw{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-top:14px}
+.sw button{aspect-ratio:1;min-height:0;padding:0;border-radius:10px;border:2px solid #0006}
+.sw button.sel{outline:2px solid #fff;outline-offset:2px}
+input[type=text],input[type=number],select{background:#0e0e10;border:1px solid var(--line);border-radius:12px;min-height:44px;padding:0 12px;width:100%;font-size:16px}
+input[type=color]{width:52px;height:44px;border:0;background:none;padding:0;flex:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{flex:none;min-height:40px;border-radius:20px;padding:0 14px;font-size:15px}
+.chips button.sel{background:var(--ink);color:#111;border-color:var(--ink);font-weight:600}
+.dev{display:flex;gap:8px;align-items:center;margin-bottom:8px}.dev input{flex:1}.dev button{flex:none;min-width:44px;padding:0 10px}
+.mode{display:grid;grid-template-columns:56px minmax(0,1fr) 56px;gap:8px;align-items:center}
+.mode input{text-align:center;font-size:22px;font-weight:600}
+.fxc{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:14px;font-size:14px;color:var(--mute)}
+#fxLive{font-variant-numeric:tabular-nums;color:var(--ink)}
+.pre{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(max-width:480px){.pre{grid-template-columns:minmax(0,1fr)}}
+.pre div{display:flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#1c1c21}
+.pre div.act{border-color:var(--ink)}
+.pre button.ap{flex:1;border:0;border-radius:0;background:none;text-align:left;display:flex;gap:10px;align-items:center;padding:0 12px;min-height:52px}
+.pre i{width:18px;height:18px;border-radius:5px;flex:none}
+.pre span{flex:1;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pre small{display:block;color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.pre button.x{border:0;border-radius:0;background:none;color:var(--mute);min-width:34px;padding:0}
+.step{display:grid;grid-template-columns:22px minmax(0,1fr) 72px 12px 44px;gap:6px;align-items:center;margin-bottom:8px;padding:4px;border-radius:12px}
+.step.cur{background:#2a2a31}.step>span{color:var(--mute);text-align:center;font-size:13px}.step b{color:var(--mute);font-weight:400;font-size:13px}
+.step input{text-align:center;padding:0 4px}.step button{padding:0}
+details{margin:12px 0}summary{cursor:pointer;color:var(--mute);font-weight:600;padding:8px 0;min-height:44px;display:flex;align-items:center}
+#log{background:#060607;border-radius:12px;padding:10px;height:200px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all;margin-top:10px}
+.tx{color:#7fb7ff}.rx{color:#7dffa8}.er{color:#ff7a7a}.nt{color:#888}
+.q{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.q button{flex:none;font:12px ui-monospace,Menlo,monospace;min-height:38px;padding:0 10px}
+p.h{color:var(--mute);font-size:14px;margin:8px 0}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);transform:translateX(-50%);background:#fff;color:#111;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:30}
+#toast.show{opacity:1}
+#nobt{display:none;border-color:#5a4500;background:#1d1700}
+#track{position:fixed;inset:0;background:#000;z-index:20;overflow:hidden;padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 14px);display:flex;flex-direction:column;gap:12px}
+#track[hidden]{display:none}
+.thead{display:flex;align-items:center;gap:10px}.thead b{flex:1;font-size:20px}
+.tgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;flex:1;min-height:0;overflow:auto;padding:4px;margin:-4px}
+.tgrid button{min-height:84px;border:0;border-radius:18px;font-size:18px;font-weight:700;color:#fff;text-shadow:0 1px 6px #000,0 0 2px #000;padding:10px;line-height:1.2}
+.tgrid button.act{outline:3px solid #fff;outline-offset:3px}
+.tfoot{display:grid;grid-template-columns:minmax(0,1fr) 64px 64px;gap:10px}.tfoot button{min-height:64px;font-size:18px;font-weight:600}
+#trStop{background:#5c1010;border-color:#8a1a1a}
+#hold{grid-column:1/-1;min-height:100px;font-size:22px;font-weight:800;background:#f1f1f3;color:#000;border:0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
+#hold.on{background:#fff;box-shadow:0 0 44px #fff}
+#holdC{width:64px;height:64px}
+.tog{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:15px}.tog input{width:22px;height:22px;flex:none}
+.rpmv{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;margin:16px 0 10px}.rpmv small{font-size:15px;color:var(--mute);font-weight:400}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:10px}.two label{font-size:13px;color:var(--mute)}
+#rpmDemo.sel{background:var(--ink);color:#111}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="dot" id="dot"></span><h1>Skidlights</h1><span id="stat">Not connected</span>
+</header>
+<div class="row"><button class="pri" id="conn">+ Controller</button><button id="trOpen">Track mode</button></div>
+
+<div class="card" id="nobt">
+  <h2>This browser can't do Bluetooth</h2>
+  <p class="h">On iPhone, Safari and Chrome block Bluetooth for web pages. Open this page's link in <b>Bluefy – Web BLE Browser</b> (free, App Store). On a laptop use Chrome or Edge.</p>
+</div>
+
+<section class="card">
+  <h2>Controllers</h2>
+  <div id="devs"></div>
+  <div id="tgtWrap" hidden><label class="s">Sending to</label><div class="chips" id="tgt"></div></div>
+  <p class="h">Name each one (Reverse, Left, Right). A controller only shows up while it has power, so if one runs off the reverse circuit, ignition on and in reverse to connect it. It keeps whatever you set after power-off.</p>
+</section>
+
+<section class="card">
+  <div class="lens off" id="lens"><svg id="lsv" viewBox="0 0 300 100" preserveAspectRatio="none"></svg></div>
+  <div class="now">
+    <div><span id="nowk">Static colour</span><b id="nowv">#FF0000</b></div>
+    <button id="pwr" aria-label="Power toggle">⏻</button>
+  </div>
+  <label class="s" for="bri">Brightness <output id="briO"></output></label>
+  <input type="range" id="bri" min="0" max="255">
+</section>
+
+<section class="card">
+  <h2>Colour</h2>
+  <label class="s" for="hue">Hue <output id="hueO"></output></label>
+  <input type="range" id="hue" min="0" max="359">
+  <label class="s" for="sat">Saturation <output id="satO"></output></label>
+  <input type="range" id="sat" min="0" max="100">
+  <div class="sw" id="sw"></div>
+  <div class="row" style="margin-top:14px">
+    <input type="color" id="pick" aria-label="Colour picker">
+    <input type="text" id="hex" maxlength="7" spellcheck="false" autocapitalize="characters" aria-label="Hex colour">
+    <button id="fav" style="flex:none">+ Swatch</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Live effects (your phone drives these)</h2>
+  <div class="chips" id="fxT"></div>
+  <div class="fxc">A <input type="color" id="fxA" aria-label="Colour A"> B <input type="color" id="fxB" aria-label="Colour B"><button id="fxSwap" aria-label="Swap colours">⇄</button></div>
+  <label class="s" for="fxR"><span id="fxRL">Rate</span> <output id="fxRO"></output></label>
+  <input type="range" id="fxR" min="1" max="100">
+  <p class="h"><span id="fxHint"></span> <span id="fxLive"></span></p>
+  <div id="rpmP" hidden>
+    <div class="rpmv"><span id="rpmV">0</span> <small>rpm</small></div>
+    <div class="row"><button id="obdC">Connect OBD dongle</button><button id="rpmDemo">Demo sweep</button></div>
+    <div class="two"><label>Start RPM<input type="number" id="rpmLo" inputmode="numeric" min="0" max="12000" step="100"></label><label>Shift RPM<input type="number" id="rpmHi" inputmode="numeric" min="500" max="12000" step="100"></label></div>
+    <p class="h" id="obdS">No dongle yet. It has to be a BLE OBD2 dongle, not a classic Bluetooth one.</p>
+  </div>
+  <label class="tog"><input type="checkbox" id="fxSplit"> Split left / right (needs 2 controllers)</label>
+  <button class="pri" id="fxGo" style="width:100%;margin-top:12px">Start effect</button>
+</section>
+
+<section class="card">
+  <h2>Built-in modes</h2>
+  <div class="mode">
+    <button id="mPrev" aria-label="Previous mode">‹</button>
+    <input type="number" id="mNum" min="1" max="255" inputmode="numeric" aria-label="Mode number">
+    <button id="mNext" aria-label="Next mode">›</button>
+  </div>
+  <div class="row" style="margin-top:8px"><button id="mSend">Run mode</button><button id="auto">Auto cycle</button></div>
+  <label class="s" for="spd">Speed <output id="spdO"></output></label>
+  <input type="range" id="spd" min="0" max="255">
+</section>
+
+<section class="card">
+  <h2>Presets</h2>
+  <div class="pre" id="pre"></div>
+  <div class="row" style="margin-top:10px">
+    <input type="text" id="pName" placeholder="Name what's running now" maxlength="24">
+    <button id="pSave" style="flex:none">Save</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Show playlist</h2>
+  <div id="steps"></div>
+  <div class="row" style="margin-top:6px">
+    <button id="stAdd">+ Step</button>
+    <label class="row" style="gap:8px;flex:none"><input type="checkbox" id="stLoop" style="width:22px;height:22px"> Loop</label>
+    <button class="pri" id="stGo">Start</button>
+  </div>
+</section>
+
+<details class="card" id="lab">
+  <summary>Lab: raw packets and log</summary>
+  <label class="s" for="fmt">Frame format</label>
+  <select id="fmt">
+    <option value="5">SP105E: 38 d1 d2 d3 cmd (default)</option>
+    <option value="6">38 d1 d2 d3 cmd 83 (SP108E style)</option>
+    <option value="4">d1 d2 d3 cmd (SP110E style)</option>
+  </select>
+  <label class="s" for="raw">Send exact bytes (hex)</label>
+  <div class="row"><input type="text" id="raw" placeholder="38 FF 00 00 1E" spellcheck="false" autocapitalize="characters"><button id="rawS" style="flex:none">Send</button></div>
+  <div class="q" id="quick"></div>
+  <div id="log"></div>
+  <div class="row" style="margin-top:8px"><button id="copy">Copy log</button><button id="clr">Clear</button><button id="info">Read status</button></div>
+</details>
+
+<details class="card">
+  <summary>Notes</summary>
+  <p class="h">Close Magic LED fully first. Each controller only takes one connection at a time.</p>
+  <p class="h">Live effects, playlists and Track mode run from this page, so keep it open and the phone in Bluetooth range. Built-in modes and colours stay on the controller by themselves.</p>
+  <p class="h">If something doesn't respond, open Lab, try the other frame format, and copy the log back to Claude.</p>
+  <label class="row" style="gap:10px;margin-top:6px"><input type="checkbox" id="all" style="flex:none;width:22px;height:22px"> <span>Show every Bluetooth device when connecting</span></label>
+</details>
+</main>
+
+<div id="track" hidden>
+  <div class="thead"><b>Track mode</b><button id="trX">Exit</button></div>
+  <div class="chips" id="trT"></div>
+  <div class="tgrid" id="trG"></div>
+  <div class="tfoot"><button id="hold">HOLD TO FLASH</button><button id="trStop">Stop effect / show</button><input type="color" id="holdC" aria-label="Flash colour"><button id="trPwr" aria-label="Power toggle">⏻</button></div>
+</div>
+<div id="toast"></div>
+
+<script>
+{
+const SVC = 0xffe0, CHR = 0xffe1, ALT_SVCS = [0xffe0, 0xfff0, 0xffd0, 0xffd5, 0xffb0, 0xff00];
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex2 = n => n.toString(16).padStart(2, '0').toUpperCase();
+const bhex = b => Array.from(b, hex2).join(' ');
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const BLACK = [0, 0, 0];
+
+const FX = {
+  strobe: { label: 'Strobe', hint: 'Flashes colour A.' },
+  alt: { label: 'Alternate', hint: 'Swaps between A and B. Red / blue for police.' },
+  fade: { label: 'Fade', hint: 'Smooth fade between A and B.' },
+  breathe: { label: 'Breathe', hint: 'Colour A breathing in and out.' },
+  heart: { label: 'Heartbeat', hint: 'Double pulse in colour A.' },
+  flicker: { label: 'Flicker', hint: 'Dying-bulb flicker in colour A.' },
+  fire: { label: 'Fire', hint: 'Flame flicker between A (deep) and B (hot).' },
+  lightning: { label: 'Lightning', hint: 'Sits on A, random lightning strikes in B. Split makes each side strike on its own.' },
+  sound: { label: 'Sound', hint: 'Mic hears the exhaust or music. Quiet = A, loud = B.', sens: true },
+  g: { label: 'G-force', hint: 'Phone accelerometer. Mount the phone, Start with the car still. Low g = A, high g = B.', sens: true },
+  rpm: { label: 'Shift light', hint: 'Engine RPM from an OBD2 dongle. A at Start RPM, sweeps to B, strobes B from Shift RPM.' }
+};
+
+/* state */
+const P = (name, kind, o) => Object.assign({ id: uid(), name, kind, bri: 255 }, o);
+const fx = (type, a, b, rate, split) => ({ type, a, b, rate, split: !!split });
+const NEW3 = () => [
+  P('Storm', 'fx', { fx: fx('lightning', '#14002E', '#E6EEFF', 65, true) }),
+  P('Fire', 'fx', { fx: fx('fire', '#FF0800', '#FF9A00', 55, true) }),
+  P('Shift light', 'fx', { fx: fx('rpm', '#00FF40', '#FF0000', 70) })
+];
+const DEF = {
+  ver: 3, holdC: '#FFFFFF', rpm: { start: 4000, shift: 7000 },
+  rgb: [255, 0, 0], hue: 0, sat: 100, mode: 1, speed: 128, bri: 255, fmt: '5', kind: 'color', on: true, target: 'all', names: {}, active: null,
+  fx: fx('flicker', '#FF5A00', '#7A00FF', 50),
+  swatches: ['#FF0000', '#FF5A00', '#FFB300', '#FFFFFF', '#9FD8FF', '#0040FF', '#8A00FF', '#39FF14'],
+  presets: [
+    P('Reverse white', 'color', { hex: '#FFFFFF' }),
+    P('Blood red', 'color', { hex: '#FF0000' }),
+    P('Pumpkin flicker', 'fx', { fx: fx('flicker', '#FF5A00', '#000000', 55) }),
+    P('Toxic strobe', 'fx', { fx: fx('strobe', '#39FF14', '#000000', 60) }),
+    P('Halloween swap', 'fx', { fx: fx('alt', '#FF5A00', '#7A00FF', 20) }),
+    P('Police', 'fx', { fx: fx('alt', '#FF0000', '#0030FF', 45, true) }),
+    P('Exhaust reactive', 'fx', { fx: fx('sound', '#300000', '#FF2000', 60) }),
+    P('G-meter', 'fx', { fx: fx('g', '#0040FF', '#FF0000', 50) }),
+    P('Mode 1', 'mode', { mode: 1, speed: 160 })
+  ].concat(NEW3()),
+  show: { loop: true, steps: [] }
+};
+DEF.show.steps = [[2, 15], [4, 10], [3, 4], [1, 6]].map(([i, sec]) => ({ id: DEF.presets[i].id, sec }));
+let stored = {};
+try { stored = JSON.parse(localStorage.getItem('sp105e-v2') || '{}') || {}; } catch (e) {}
+const S = Object.assign({}, DEF, stored);
+if (stored.presets && !stored.ver) { S.presets = S.presets.concat(NEW3()); S.ver = 3; }
+const save = () => { try { localStorage.setItem('sp105e-v2', JSON.stringify(S)); } catch (e) {} };
+
+/* colour maths */
+const hsv = (h, s) => { s /= 100; const f = n => { const k = (n + h / 60) % 6; return Math.round(255 * (1 - s * Math.max(0, Math.min(k, 4 - k, 1)))); }; return [f(5), f(3), f(1)]; };
+const toHS = ([r, g, b]) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; let h = 0; if (d) { if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360; } return [Math.round(h), mx ? Math.round(d / mx * 100) : 0]; };
+const toHex = ([r, g, b]) => '#' + hex2(r) + hex2(g) + hex2(b);
+const fromHex = h => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h).trim()); if (!m) return null; const n = parseInt(m[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const mix = (A, B, p) => A.map((v, i) => Math.round(v + (B[i] - v) * p));
+const scale = (A, k) => A.map(v => Math.round(v * k));
+const pulse = (ph, c, w) => ph >= c && ph < c + w ? Math.sin(Math.PI * (ph - c) / w) : 0;
+
+/* log + toast */
+const logEl = $('#log');
+function log(cls, msg) {
+  const d = document.createElement('div'); d.className = cls; d.textContent = new Date().toTimeString().slice(0, 8) + '  ' + msg;
+  logEl.appendChild(d); while (logEl.childNodes.length > 400) logEl.firstChild.remove();
+  logEl.scrollTop = logEl.scrollHeight;
+}
+let tt;
+function toast(m) { const e = $('#toast'); e.textContent = m; e.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => e.classList.remove('show'), 2600); }
+
+/* BLE: one entry per controller */
+const conns = new Map();
+const cname = c => S.names[c.dev.id] || c.dev.name || 'Controller';
+const live = () => [...conns.values()].filter(c => c.ch);
+const targets = () => live().filter(c => S.target === 'all' || S.target === c.dev.id);
+
+function status() {
+  const n = live().length;
+  $('#stat').textContent = n ? n + ' connected' : 'Not connected';
+  $('#dot').className = 'dot ' + (n ? 'on' : '');
+}
+function frame(d1, d2, d3, cmd) {
+  if (S.fmt === '4') return new Uint8Array([d1, d2, d3, cmd]);
+  if (S.fmt === '6') return new Uint8Array([0x38, d1, d2, d3, cmd, 0x83]);
+  return new Uint8Array([0x38, d1, d2, d3, cmd]);
+}
+function send(bytes, key) {
+  const ts = targets();
+  if (!ts.length) { log('nt', 'not sent (no controller): ' + bhex(bytes)); return; }
+  for (const c of ts) { c.lastFx = ''; enqueue(c, bytes, key, false); }
+}
+function enqueue(c, bytes, key, quiet) {
+  if (key) { const q = c.queue.find(x => x.key === key); if (q) { q.bytes = bytes; q.quiet = quiet; return; } }
+  c.queue.push({ bytes, key, quiet }); pump(c);
+}
+async function pump(c) {
+  if (c.busy) return; c.busy = true;
+  while (c.queue.length && c.ch) {
+    const { bytes, quiet } = c.queue.shift();
+    if (!quiet) log('tx', (conns.size > 1 ? cname(c) + ' ' : '') + 'TX ' + bhex(bytes));
+    try {
+      const ch = c.ch;
+      if (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) await ch.writeValueWithoutResponse(bytes);
+      else if (ch.writeValueWithResponse) await ch.writeValueWithResponse(bytes);
+      else await ch.writeValue(bytes);
+    } catch (e) { log('er', cname(c) + ' write failed: ' + e.message); }
+    await sleep(60);
+  }
+  c.queue = []; c.busy = false;
+}
+const CMD = {
+  color: () => send(frame(S.rgb[0], S.rgb[1], S.rgb[2], 0x1E), 'color'),
+  mode: () => send(frame(S.mode, 0, 0, 0x2C), 'mode'),
+  speed: () => send(frame(S.speed, 0, 0, 0x03), 'speed'),
+  bri: () => send(frame(S.bri, 0, 0, 0x2A), 'bri'),
+  power: () => send(frame(0, 0, 0, 0xAA)),
+  auto: () => send(frame(0, 0, 0, 0x06)),
+  info: () => send(frame(0, 0, 0, 0x10))
+};
+
+function onNotify(c, e) {
+  const b = new Uint8Array(e.target.value.buffer);
+  log('rx', (conns.size > 1 ? cname(c) + ' ' : '') + 'RX ' + bhex(b));
+  if (b.length === 12) log('nt', `  guess (SP110E layout): pwr ${b[0]} mode ${b[1]} spd ${b[2]} bri ${b[3]} ic ${b[4]} order ${b[5]} px ${(b[6] << 8) | b[7]} rgb ${b[8]},${b[9]},${b[10]}`);
+}
+async function pickChar(server) {
+  try { const s = await server.getPrimaryService(SVC); return await s.getCharacteristic(CHR); }
+  catch (e) { log('nt', 'FFE0/FFE1 not found, scanning other services…'); }
+  for (const s of await server.getPrimaryServices()) {
+    for (const ch of await s.getCharacteristics()) {
+      const p = ch.properties;
+      log('nt', `svc ${s.uuid.slice(4, 8)} chr ${ch.uuid.slice(4, 8)} ${p.write ? 'W' : ''}${p.writeWithoutResponse ? 'w' : ''}${p.notify ? 'N' : ''}${p.read ? 'R' : ''}`);
+      if (p.write || p.writeWithoutResponse) return ch;
+    }
+  }
+  throw new Error('No writable characteristic found');
+}
+async function attach(c) {
+  $('#dot').className = 'dot busy';
+  const server = await c.dev.gatt.connect();
+  c.ch = await pickChar(server);
+  if (c.ch.properties.notify) { try { await c.ch.startNotifications(); c.ch.addEventListener('characteristicvaluechanged', e => onNotify(c, e)); } catch (e) { log('nt', 'notify not available'); } }
+  log('nt', cname(c) + ' connected via ' + c.ch.uuid.slice(4, 8));
+  status(); renderDevs();
+}
+async function addController() {
+  if (!navigator.bluetooth) { $('#nobt').style.display = 'block'; toast('No Bluetooth in this browser'); return; }
+  const opts = $('#all').checked ? { acceptAllDevices: true, optionalServices: ALT_SVCS }
+    : { filters: [{ namePrefix: 'SP' }, { services: [SVC] }], optionalServices: ALT_SVCS };
+  let dev;
+  try {
+    try { dev = await navigator.bluetooth.requestDevice(opts); }
+    catch (e) { if (e.name !== 'TypeError') throw e; delete opts.optionalServices; dev = await navigator.bluetooth.requestDevice(opts); }
+  } catch (e) { if (e.name !== 'NotFoundError') { log('er', e.name + ': ' + e.message); toast(e.message); } return; }
+  let c = conns.get(dev.id);
+  if (c && c.ch) { toast(cname(c) + ' is already connected'); return; }
+  if (!c) { c = { dev, ch: null, queue: [], busy: false, user: false, lastFx: '' }; conns.set(dev.id, c); dev.addEventListener('gattserverdisconnected', () => onDisc(c)); }
+  c.user = false;
+  try { await attach(c); toast('Connected ' + cname(c)); }
+  catch (e) { log('er', 'connect failed: ' + e.message); toast('Connect failed: ' + e.message); conns.delete(dev.id); status(); renderDevs(); }
+}
+async function onDisc(c) {
+  c.ch = null; status(); renderDevs();
+  log('nt', cname(c) + ' disconnected');
+  if (c.user) return;
+  for (let i = 1; i <= 3 && !c.user && !c.ch; i++) {
+    await sleep(800 * i);
+    try { await attach(c); return; } catch (e) { log('nt', 'reconnect ' + i + '/3 failed: ' + e.message); }
+  }
+}
+
+/* live effects */
+let fxTimer = null, fxT0 = 0, fxLevel = 0, flick = 1, mic = null, motion = null;
+async function startMic() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('this browser has no mic access');
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.resume) await ac.resume();
+  const an = ac.createAnalyser(); an.fftSize = 1024;
+  ac.createMediaStreamSource(stream).connect(an);
+  mic = { stream, ac, an, buf: new Float32Array(an.fftSize), peak: 0.02 };
+}
+function micLevel() {
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let s = 0; for (const v of mic.buf) s += v * v;
+  const rms = Math.sqrt(s / mic.buf.length);
+  mic.peak = Math.max(rms, mic.peak * 0.997, 0.01);
+  const floor = 0.55 - S.fx.rate / 100 * 0.5;
+  return clamp((rms / mic.peak - floor) / (1 - floor), 0, 1);
+}
+function stopMic() { if (mic) { mic.stream.getTracks().forEach(t => t.stop()); if (mic.ac.close) mic.ac.close(); mic = null; } }
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!motion || !a || a.x == null) return;
+  motion.got = true;
+  const v = [a.x, a.y, a.z];
+  if (motion.n < 15) { motion.sum = motion.sum.map((s, i) => s + v[i]); if (++motion.n === 15) motion.base = motion.sum.map(s => s / 15); return; }
+  motion.g = Math.hypot(v[0] - motion.base[0], v[1] - motion.base[1], v[2] - motion.base[2]) / 9.81;
+}
+async function startMotion() {
+  if (typeof DeviceMotionEvent === 'undefined') throw new Error('this browser has no motion sensor access');
+  if (typeof DeviceMotionEvent.requestPermission === 'function') { const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') throw new Error('motion permission denied'); }
+  motion = { n: 0, sum: [0, 0, 0], base: null, g: 0, got: false };
+  window.addEventListener('devicemotion', onMotion);
+  setTimeout(() => { if (motion && !motion.got) toast('No motion data coming from this browser'); }, 2500);
+}
+function stopMotion() { if (motion) { window.removeEventListener('devicemotion', onMotion); motion = null; } }
+
+/* per-controller effect state, so split sides can flicker / strike independently */
+const newSt = () => ({ flick: 1, heat: 0.5, h2: 0.5, fl: [], end: 0, next: 0 });
+let shared = newSt(), lastFxRgb = null;
+const cyc = (t, sh) => (((t + sh) % 1) + 1) % 1;
+const vivid = rgb => { const m = Math.max(...rgb); return m ? rgb.map(v => Math.round(v * 255 / m)) : rgb; };
+const rpm = { raw: 0, val: 0, demo: false, last: 0 };
+
+function fxColor(st, s, odd) {
+  const f = S.fx, A = fromHex(f.a) || BLACK, B = fromHex(f.b) || BLACK;
+  const hz = 0.5 + f.rate / 100 * 5.5, sh = odd ? 0.5 : 0;
+  switch (f.type) {
+    case 'strobe': return cyc(s * hz, sh) < 0.4 ? A : BLACK;
+    case 'alt': return cyc(s * hz, sh) < 0.5 ? A : B;
+    case 'fade': return mix(A, B, (1 - Math.cos(2 * Math.PI * cyc(s * hz / 4, sh))) / 2);
+    case 'breathe': return scale(A, 0.04 + 0.96 * (1 - Math.cos(2 * Math.PI * cyc(s * hz / 4, sh))) / 2);
+    case 'heart': { const ph = cyc(s * hz / 4, sh); return scale(A, 0.05 + 0.95 * Math.max(pulse(ph, 0, 0.14), 0.65 * pulse(ph, 0.2, 0.14))); }
+    case 'flicker':
+      st.flick = clamp(st.flick + (Math.random() - 0.42) * (0.1 + f.rate / 200), 0.35, 1);
+      if (Math.random() < 0.015 + f.rate / 2000) st.flick = 0.05;
+      return scale(A, st.flick);
+    case 'fire':
+      st.heat = clamp(st.heat + (Math.random() - 0.5) * (0.15 + f.rate / 150), 0, 1);
+      st.h2 += (st.heat - st.h2) * 0.5;
+      return scale(mix(A, B, st.h2), 0.45 + 0.55 * st.h2);
+    case 'lightning': {
+      if (!st.next) st.next = s + 0.4 + Math.random() * 2;
+      if (s >= st.next && s >= st.end) {
+        let t = s; st.fl = [];
+        for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) { const on = 0.08 + Math.random() * 0.08; st.fl.push([t, t + on]); t += on + 0.07 + Math.random() * 0.12; }
+        st.end = t; st.next = t + (7 - f.rate / 100 * 6) * (0.4 + Math.random() * 1.2);
+      }
+      return st.fl.some(([a, b]) => s >= a && s < b) ? B : A;
+    }
+    case 'rpm': {
+      const r = rpm.val, lo = S.rpm.start, hi = Math.max(S.rpm.shift, lo + 100);
+      if (r >= hi) return cyc(s * (3 + f.rate / 100 * 5), sh) < 0.5 ? B : BLACK;
+      if (r < lo) return scale(A, 0.15);
+      const p = (r - lo) / (hi - lo);
+      return scale(vivid(mix(A, B, p)), 0.35 + 0.65 * p);
+    }
+    default: return scale(mix(A, B, fxLevel), 0.12 + 0.88 * fxLevel);
+  }
+}
+function sendFx(c, rgb) { const k = rgb.join(); if (c.lastFx === k) return; c.lastFx = k; enqueue(c, frame(rgb[0], rgb[1], rgb[2], 0x1E), 'color', true); }
+
+/* hold-to-flash overrides everything while a finger is on the button */
+let hold = false, holdT0 = 0, holdTimer = null;
+function fxTick() {
+  const now = performance.now(), s = (now - fxT0) / 1000, ts = targets();
+  let first;
+  if (hold) {
+    first = cyc((now - holdT0) / 1000 * 7, 0) < 0.5 ? (fromHex(S.holdC) || [255, 255, 255]) : BLACK;
+    for (const c of ts) sendFx(c, first);
+  } else {
+    const t = S.fx.type;
+    if (t === 'sound' || t === 'g') {
+      const raw = t === 'sound' ? (mic ? micLevel() : 0) : (motion && motion.base ? clamp(motion.g / (1.6 - S.fx.rate / 100 * 1.4), 0, 1) : 0);
+      fxLevel += (raw - fxLevel) * (raw > fxLevel ? 0.6 : 0.15);
+      $('#fxLive').textContent = t === 'g' ? (motion && motion.base ? motion.g.toFixed(2) + ' g' : 'hold still…') : 'level ' + Math.round(fxLevel * 100) + '%';
+    }
+    if (t === 'rpm') {
+      if (rpm.demo) rpm.raw = 1100 + 6900 * Math.pow(Math.max(0, Math.sin(now / 1000 * 1.1)), 1.4);
+      rpm.val = Math.abs(rpm.raw - rpm.val) < 15 ? rpm.raw : rpm.val + (rpm.raw - rpm.val) * 0.35;
+      $('#rpmV').textContent = Math.round(rpm.val / 10) * 10;
+    }
+    if (S.fx.split && ts.length > 1) ts.forEach((c, i) => { c.fxs = c.fxs || newSt(); const rgb = fxColor(c.fxs, s, i % 2); if (!i) first = rgb; sendFx(c, rgb); });
+    else { first = fxColor(shared, s, 0); for (const c of ts) sendFx(c, first); }
+    lastFxRgb = first;
+  }
+  document.documentElement.style.setProperty('--c', toHex(first));
+}
+function holdOn(e) {
+  if (e) { e.preventDefault(); try { e.target.setPointerCapture(e.pointerId); } catch (err) {} }
+  if (hold) return;
+  hold = true; holdT0 = performance.now(); $('#hold').classList.add('on');
+  for (const c of conns.values()) c.lastFx = '';
+  if (!fxTimer) holdTimer = setInterval(fxTick, 30);
+  fxTick();
+}
+function holdOff() {
+  if (!hold) return;
+  hold = false; $('#hold').classList.remove('on');
+  for (const c of conns.values()) c.lastFx = '';
+  if (holdTimer) {
+    clearInterval(holdTimer); holdTimer = null;
+    if (S.kind === 'color') CMD.color(); else if (S.kind === 'mode') CMD.mode(); else if (S.kind === 'auto') CMD.auto();
+    else if (lastFxRgb) send(frame(lastFxRgb[0], lastFxRgb[1], lastFxRgb[2], 0x1E), 'color');
+    paint();
+  }
+}
+
+/* ELM327 OBD2 over BLE, for the shift light */
+const OBD_SVCS = [0xfff0, 0xffe0, 0x18f0, 0xffb0, 0xae00, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2'];
+const obd = { dev: null, w: null, buf: '', wait: null, run: false };
+const td = new TextDecoder(), te = new TextEncoder();
+const obdStat = t => { $('#obdS').textContent = t; };
+async function obdWrite(str) {
+  const w = obd.w; if (!w) return;
+  const d = te.encode(str + '\r');
+  try {
+    if (w.properties.writeWithoutResponse && w.writeValueWithoutResponse) await w.writeValueWithoutResponse(d);
+    else if (w.writeValueWithResponse) await w.writeValueWithResponse(d);
+    else await w.writeValue(d);
+  } catch (e) { log('er', 'OBD write: ' + e.message); }
+}
+function obdCmd(cmd, ms) {
+  return new Promise(res => {
+    const t = setTimeout(() => { obd.wait = null; const r = obd.buf; obd.buf = ''; res(r); }, ms || 1500);
+    obd.wait = r => { clearTimeout(t); obd.wait = null; res(r); };
+    obd.buf = ''; obdWrite(cmd);
+  });
+}
+function obdRx(e) {
+  obd.buf += td.decode(e.target.value);
+  if (obd.buf.includes('>') && obd.wait) { const r = obd.buf; obd.buf = ''; obd.wait(r); }
+}
+async function obdConnect() {
+  if (obd.dev && obd.dev.gatt.connected) { obd.run = false; obd.dev.gatt.disconnect(); return; }
+  if (!navigator.bluetooth) { toast('No Bluetooth in this browser'); return; }
+  let dev;
+  try {
+    try { dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_SVCS }); }
+    catch (e) { if (e.name !== 'TypeError') throw e; dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true }); }
+  } catch (e) { if (e.name !== 'NotFoundError') toast(e.message); return; }
+  try {
+    obdStat('Connecting…');
+    const server = await dev.gatt.connect();
+    let w = null, n = null;
+    for (const svc of await server.getPrimaryServices()) {
+      let sw = null, sn = null;
+      for (const ch of await svc.getCharacteristics()) { const p = ch.properties; if (!sn && (p.notify || p.indicate)) sn = ch; if (!sw && (p.write || p.writeWithoutResponse)) sw = ch; }
+      log('nt', `OBD svc ${svc.uuid.slice(0, 8)} write ${sw ? sw.uuid.slice(4, 8) : '-'} notify ${sn ? sn.uuid.slice(4, 8) : '-'}`);
+      if (sw && sn) { w = sw; n = sn; break; }
+    }
+    if (!w) throw new Error('no serial characteristic found on this device');
+    obd.dev = dev; obd.w = w;
+    dev.addEventListener('gattserverdisconnected', () => { obd.run = false; obd.w = null; obdStat('OBD dongle disconnected'); $('#obdC').textContent = 'Connect OBD dongle'; });
+    await n.startNotifications(); n.addEventListener('characteristicvaluechanged', obdRx);
+    $('#obdC').textContent = 'Disconnect OBD';
+    obdStat('Setting up ' + (dev.name || 'dongle') + '…');
+    for (const c of ['ATZ', 'ATE0', 'ATL0', 'ATS0', 'ATH0', 'ATSP0']) {
+      const r = await obdCmd(c, c === 'ATZ' ? 3000 : 1500);
+      log('nt', 'OBD ' + c + ' → ' + (r.replace(/\s+/g, ' ').trim() || 'no reply'));
+    }
+    obd.run = true; rpm.demo = false; paintFx(); obdLoop();
+  } catch (e) { log('er', 'OBD: ' + e.message); obdStat('OBD failed: ' + e.message); }
+}
+async function obdLoop() {
+  let fails = 0;
+  obdStat('Waiting for the ECU (first read can take a few seconds)…');
+  while (obd.run && obd.w) {
+    const r = (await obdCmd('010C', 5000)).replace(/\s/g, '').toUpperCase();
+    const m = /410C([0-9A-F]{4})/.exec(r);
+    if (m) {
+      rpm.raw = parseInt(m[1], 16) / 4;
+      if (fails || !rpm.last) obdStat('Reading RPM from ' + (obd.dev.name || 'dongle'));
+      rpm.last = performance.now(); fails = 0;
+      if (!fxTimer) $('#rpmV').textContent = Math.round(rpm.raw);
+    } else {
+      if (++fails === 3) { obdStat('No RPM yet (' + (r.slice(0, 24) || 'no reply') + '). Ignition on?'); log('nt', 'OBD reply: ' + (r.slice(0, 60) || 'none')); }
+      await sleep(fails > 3 ? 500 : 50);
+    }
+  }
+}
+
+async function startFx() {
+  stopFx();
+  const t = S.fx.type;
+  try { if (t === 'sound') await startMic(); if (t === 'g') await startMotion(); }
+  catch (e) { log('er', t + ': ' + e.message); toast(e.message); return; }
+  if (t === 'rpm' && !obd.run && !rpm.demo) toast('Connect the OBD dongle or tap Demo sweep');
+  S.kind = 'fx'; S.on = true; fxT0 = performance.now(); fxLevel = 0; shared = newSt();
+  for (const c of conns.values()) { c.lastFx = ''; c.fxs = null; }
+  fxTimer = setInterval(fxTick, 30);
+  wakeCheck(); paint(); paintFx();
+}
+function stopFx() {
+  if (fxTimer) { clearInterval(fxTimer); fxTimer = null; }
+  stopMic(); stopMotion(); $('#fxLive').textContent = '';
+  wakeCheck(); paintFx();
+}
+
+/* show playlist */
+let showTimer = null, showIdx = 0;
+function runStep() {
+  const st = S.show.steps[showIdx], p = st && S.presets.find(x => x.id === st.id);
+  if (p) applyPreset(p, true);
+  renderShow();
+  showTimer = setTimeout(() => {
+    showIdx++;
+    if (showIdx >= S.show.steps.length) { if (!S.show.loop) { stopShow(); return; } showIdx = 0; }
+    runStep();
+  }, Math.max(1, st ? st.sec : 1) * 1000);
+}
+function startShow() { if (!S.show.steps.length) { toast('Add a step first'); return; } stopShow(); showIdx = 0; runStep(); wakeCheck(); }
+function stopShow() { if (showTimer) { clearTimeout(showTimer); showTimer = null; } renderShow(); wakeCheck(); }
+
+/* screen wake lock */
+let wl = null;
+async function wakeCheck() {
+  const want = !$('#track').hidden || fxTimer || showTimer;
+  try {
+    if (want && !wl && navigator.wakeLock) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); }
+    else if (!want && wl) { await wl.release(); wl = null; }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wakeCheck(); });
+
+/* actions */
+function manual() { stopShow(); stopFx(); S.active = null; }
+function setRGB(rgb, fromSliders) {
+  S.rgb = rgb; S.kind = 'color'; S.on = true;
+  if (!fromSliders) { const [h, s] = toHS(rgb); S.hue = h; S.sat = s; }
+  CMD.color(); paint();
+}
+function setMode(n) { S.mode = clamp(n | 0, 1, 255); S.kind = 'mode'; S.on = true; CMD.mode(); paint(); }
+function applyPreset(p, fromShow) {
+  if (!fromShow) stopShow();
+  if (p.kind !== 'fx') stopFx();
+  S.active = p.id; S.bri = p.bri != null ? p.bri : S.bri; S.on = true;
+  if (p.kind === 'color') { setRGB(fromHex(p.hex)); CMD.bri(); }
+  else if (p.kind === 'auto') { S.kind = 'auto'; CMD.auto(); S.speed = p.speed; CMD.speed(); CMD.bri(); }
+  else if (p.kind === 'mode') { S.speed = p.speed; setMode(p.mode); CMD.speed(); CMD.bri(); }
+  else if (p.kind === 'fx') { S.fx = Object.assign({}, p.fx); CMD.bri(); startFx(); }
+  paint(); renderPresets();
+}
+
+/* rendering */
+const lsv = $('#lsv');
+lsv.innerHTML = Array.from({ length: 22 }, (_, i) => `<rect class="px" x="${16 + i * 12.5}" y="38" width="9" height="24" rx="3" style="animation-delay:${(i * 0.055).toFixed(2)}s"/>`).join('');
+const pSwatch = p => p.kind === 'color' ? p.hex : p.kind === 'fx' ? `linear-gradient(135deg,${p.fx.a} 50%,${p.fx.b} 50%)` : 'linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f)';
+const pSub = p => p.kind === 'color' ? p.hex : p.kind === 'fx' ? FX[p.fx.type].label.toLowerCase() + ' effect' : p.kind === 'auto' ? 'auto cycle' : 'mode ' + p.mode;
+
+function paint() {
+  const hx = toHex(S.rgb);
+  if (S.kind !== 'fx') document.documentElement.style.setProperty('--c', S.kind === 'color' ? hx : '#ff2a2a');
+  document.documentElement.style.setProperty('--pure', toHex(hsv(S.hue, 100)));
+  $('#lens').className = 'lens' + (S.on ? '' : ' off') + (S.kind === 'mode' || S.kind === 'auto' ? ' run' : '');
+  $('#lens').style.opacity = 0.35 + 0.65 * (S.bri / 255);
+  $('#nowk').textContent = { color: 'Static colour', mode: 'Built-in mode', auto: 'Auto cycle', fx: 'Live effect' }[S.kind];
+  $('#nowv').textContent = S.kind === 'color' ? hx : S.kind === 'auto' ? 'All modes' : S.kind === 'fx' ? FX[S.fx.type].label : 'Mode ' + S.mode;
+  $('#hue').value = S.hue; $('#hueO').textContent = S.hue + '°';
+  $('#sat').value = S.sat; $('#satO').textContent = S.sat + '%';
+  $('#bri').value = S.bri; $('#briO').textContent = Math.round(S.bri / 2.55) + '%';
+  $('#spd').value = S.speed; $('#spdO').textContent = Math.round(S.speed / 2.55) + '%';
+  $('#mNum').value = S.mode;
+  if (document.activeElement !== $('#hex')) $('#hex').value = hx;
+  $('#pick').value = hx.toLowerCase();
+  $('#fmt').value = S.fmt;
+  $('#sw').innerHTML = S.swatches.map(c => `<button data-c="${c}" style="background:${c}" class="${S.kind === 'color' && c === hx ? 'sel' : ''}" aria-label="${c}"></button>`).join('');
+  save();
+}
+function paintFx() {
+  const f = S.fx, d = FX[f.type];
+  $('#fxT').innerHTML = Object.entries(FX).map(([k, v]) => `<button data-fx="${k}" class="${k === f.type ? 'sel' : ''}">${v.label}</button>`).join('');
+  $('#fxA').value = f.a.toLowerCase(); $('#fxB').value = f.b.toLowerCase();
+  $('#fxR').value = f.rate; $('#fxRO').textContent = f.rate + '%';
+  $('#fxRL').textContent = f.type === 'rpm' ? 'Limiter flash rate' : d.sens ? 'Sensitivity' : 'Rate';
+  $('#fxHint').textContent = d.hint;
+  $('#fxSplit').checked = !!f.split;
+  $('#rpmP').hidden = f.type !== 'rpm';
+  $('#rpmLo').value = S.rpm.start; $('#rpmHi').value = S.rpm.shift;
+  $('#rpmDemo').classList.toggle('sel', rpm.demo); $('#rpmDemo').textContent = rpm.demo ? 'Demo on' : 'Demo sweep';
+  $('#holdC').value = S.holdC.toLowerCase();
+  $('#fxGo').textContent = fxTimer ? 'Stop effect' : 'Start effect';
+  save();
+}
+function renderPresets() {
+  $('#pre').innerHTML = S.presets.map((p, i) => `<div class="${S.active === p.id ? 'act' : ''}"><button class="ap" data-i="${i}"><i style="background:${pSwatch(p)}"></i><span>${esc(p.name)}<small>${pSub(p)} · ${Math.round(p.bri / 2.55)}%</small></span></button><button class="x" data-x="${i}" aria-label="Delete ${esc(p.name)}">×</button></div>`).join('');
+  $('#trG').innerHTML = S.presets.map((p, i) => `<button data-i="${i}" class="${S.active === p.id ? 'act' : ''}" style="background:${pSwatch(p)}">${esc(p.name)}</button>`).join('');
+  renderShow(); save();
+}
+function renderShow() {
+  const opts = S.presets.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  $('#steps').innerHTML = S.show.steps.length ? S.show.steps.map((st, i) =>
+    `<div class="step ${showTimer && i === showIdx ? 'cur' : ''}"><span>${i + 1}</span><select data-s="${i}" aria-label="Step ${i + 1} preset">${opts}</select><input type="number" min="1" max="600" inputmode="numeric" value="${st.sec}" data-sec="${i}" aria-label="Seconds"><b>s</b><button data-rm="${i}" aria-label="Remove step">×</button></div>`).join('')
+    : '<p class="h">No steps yet. Add presets and set how long each runs.</p>';
+  S.show.steps.forEach((st, i) => { const el = document.querySelector(`[data-s="${i}"]`); if (el) el.value = st.id; });
+  $('#stLoop').checked = S.show.loop;
+  $('#stGo').textContent = showTimer ? 'Stop' : 'Start';
+  save();
+}
+function renderDevs() {
+  const cs = [...conns.values()];
+  $('#devs').innerHTML = cs.length ? cs.map(c => `<div class="dev"><span class="dot ${c.ch ? 'on' : ''}"></span><input type="text" value="${esc(cname(c))}" data-n="${esc(c.dev.id)}" maxlength="16" aria-label="Controller name">${c.ch ? '' : `<button data-re="${esc(c.dev.id)}">Retry</button>`}<button data-rm="${esc(c.dev.id)}" aria-label="Disconnect">×</button></div>`).join('')
+    : '<p class="h">None connected yet. Tap + Controller.</p>';
+  if (S.target !== 'all' && !conns.has(S.target)) S.target = 'all';
+  const chips = [['all', 'All']].concat(cs.map(c => [c.dev.id, cname(c)]))
+    .map(([id, l]) => `<button data-t="${esc(id)}" class="${S.target === id ? 'sel' : ''}">${esc(l)}</button>`).join('');
+  $('#tgt').innerHTML = chips; $('#trT').innerHTML = cs.length > 1 ? chips : '';
+  $('#tgtWrap').hidden = cs.length < 2;
+  save();
+}
+
+/* events */
+$('#conn').onclick = addController;
+$('#devs').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const c = conns.get(b.dataset.rm || b.dataset.re); if (!c) return;
+  if (b.dataset.re) { try { await attach(c); } catch (err) { toast('Still not reachable'); } return; }
+  c.user = true; if (c.ch) c.dev.gatt.disconnect(); conns.delete(c.dev.id); status(); renderDevs();
+};
+$('#devs').onchange = e => { const id = e.target.dataset.n; if (id) { S.names[id] = e.target.value.trim(); renderDevs(); } };
+const pickTarget = e => { const t = e.target.closest('button'); if (t && t.dataset.t) { S.target = t.dataset.t; renderDevs(); } };
+$('#tgt').onclick = pickTarget; $('#trT').onclick = pickTarget;
+
+$('#pwr').onclick = () => { manual(); S.on = !S.on; CMD.power(); paint(); renderPresets(); };
+$('#hue').oninput = e => { manual(); S.hue = +e.target.value; setRGB(hsv(S.hue, S.sat), true); };
+$('#sat').oninput = e => { manual(); S.sat = +e.target.value; setRGB(hsv(S.hue, S.sat), true); };
+$('#bri').oninput = e => { S.bri = +e.target.value; CMD.bri(); paint(); };
+$('#spd').oninput = e => { S.speed = +e.target.value; CMD.speed(); paint(); };
+$('#pick').oninput = e => { manual(); setRGB(fromHex(e.target.value)); };
+$('#hex').onchange = e => { const v = fromHex(e.target.value); if (v) { manual(); setRGB(v); } else { toast('Use a 6-digit hex like #FF2200'); paint(); } };
+$('#sw').onclick = e => { const c = e.target.dataset.c; if (c) { manual(); setRGB(fromHex(c)); renderPresets(); } };
+$('#fav').onclick = () => { const h = toHex(S.rgb); if (!S.swatches.includes(h)) { S.swatches = [h, ...S.swatches].slice(0, 16); paint(); toast('Added ' + h); } };
+$('#mPrev').onclick = () => { manual(); setMode(S.mode - 1); renderPresets(); };
+$('#mNext').onclick = () => { manual(); setMode(S.mode + 1); renderPresets(); };
+$('#mSend').onclick = () => { manual(); setMode(+$('#mNum').value); renderPresets(); };
+$('#mNum').onchange = e => { manual(); setMode(+e.target.value); renderPresets(); };
+$('#auto').onclick = () => { manual(); S.kind = 'auto'; S.on = true; CMD.auto(); paint(); renderPresets(); };
+
+$('#fxT').onclick = e => { const k = e.target.dataset.fx; if (!k) return; const was = !!fxTimer; S.fx.type = k; paintFx(); if (was) startFx(); };
+$('#fxA').oninput = e => { S.fx.a = e.target.value.toUpperCase(); save(); };
+$('#fxB').oninput = e => { S.fx.b = e.target.value.toUpperCase(); save(); };
+$('#fxSwap').onclick = () => { [S.fx.a, S.fx.b] = [S.fx.b, S.fx.a]; paintFx(); };
+$('#fxR').oninput = e => { S.fx.rate = +e.target.value; $('#fxRO').textContent = S.fx.rate + '%'; save(); };
+$('#fxGo').onclick = () => { if (fxTimer) { stopFx(); paint(); } else { stopShow(); S.active = null; renderPresets(); startFx(); } };
+$('#fxSplit').onchange = e => { S.fx.split = e.target.checked; for (const c of conns.values()) c.lastFx = ''; save(); };
+$('#obdC').onclick = obdConnect;
+$('#rpmDemo').onclick = () => { rpm.demo = !rpm.demo; if (!rpm.demo) rpm.raw = 0; paintFx(); if (rpm.demo && !fxTimer) { stopShow(); S.active = null; renderPresets(); startFx(); } };
+$('#rpmLo').onchange = e => { S.rpm.start = clamp(+e.target.value || 0, 0, 12000); save(); };
+$('#rpmHi').onchange = e => { S.rpm.shift = clamp(+e.target.value || 7000, 500, 12000); save(); };
+
+const presetClick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.x !== undefined) {
+    const p = S.presets.splice(+b.dataset.x, 1)[0];
+    S.show.steps = S.show.steps.filter(st => st.id !== p.id);
+    renderPresets(); return;
+  }
+  const p = S.presets[+b.dataset.i]; if (p) { applyPreset(p); toast(p.name); }
+};
+$('#pre').onclick = presetClick; $('#trG').onclick = presetClick;
+$('#pSave').onclick = () => {
+  const auto = S.kind === 'color' ? toHex(S.rgb) : S.kind === 'fx' ? FX[S.fx.type].label : S.kind === 'auto' ? 'Auto cycle' : 'Mode ' + S.mode;
+  const p = P($('#pName').value.trim() || auto, S.kind, { bri: S.bri });
+  if (S.kind === 'color') p.hex = toHex(S.rgb);
+  else if (S.kind === 'fx') p.fx = Object.assign({}, S.fx);
+  else { p.mode = S.mode; p.speed = S.speed; }
+  S.presets.push(p); S.active = p.id; $('#pName').value = ''; renderPresets(); toast('Saved ' + p.name);
+};
+
+$('#stAdd').onclick = () => { if (!S.presets.length) return; S.show.steps.push({ id: S.presets[0].id, sec: 10 }); renderShow(); };
+$('#steps').onchange = e => {
+  const t = e.target;
+  if (t.dataset.s !== undefined) S.show.steps[+t.dataset.s].id = t.value;
+  if (t.dataset.sec !== undefined) S.show.steps[+t.dataset.sec].sec = clamp(+t.value || 1, 1, 600);
+  save();
+};
+$('#steps').onclick = e => { const b = e.target.closest('button'); if (b && b.dataset.rm !== undefined) { S.show.steps.splice(+b.dataset.rm, 1); if (showTimer && showIdx >= S.show.steps.length) showIdx = 0; renderShow(); } };
+$('#stLoop').onchange = e => { S.show.loop = e.target.checked; save(); };
+$('#stGo').onclick = () => { if (showTimer) { manual(); paint(); renderPresets(); } else startShow(); };
+
+$('#trOpen').onclick = () => { $('#track').hidden = false; renderDevs(); renderPresets(); wakeCheck(); };
+$('#trX').onclick = () => { holdOff(); $('#track').hidden = true; wakeCheck(); };
+const hb = $('#hold');
+hb.addEventListener('pointerdown', holdOn);
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => hb.addEventListener(ev, holdOff));
+hb.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('blur', holdOff);
+$('#holdC').oninput = e => { S.holdC = e.target.value.toUpperCase(); save(); };
+$('#trStop').onclick = () => { manual(); paint(); renderPresets(); toast('Stopped'); };
+$('#trPwr').onclick = () => $('#pwr').click();
+
+/* lab */
+$('#fmt').onchange = e => { S.fmt = e.target.value; save(); };
+const QUICK = [
+  ['38 00 00 00 AA', 'power'], ['38 00 00 00 AB', 'off?'], ['38 00 00 00 06', 'auto'], ['38 00 00 00 10', 'status?'],
+  ['38 00 00 00 2A', 'bright+?'], ['38 00 00 00 28', 'bright−?'], ['38 00 00 00 03', 'speed+?'], ['38 00 00 00 09', 'speed−?'],
+  ['38 FF 00 00 1E', 'red'], ['38 FF FF FF 1E', 'white'], ['38 63 00 00 2C', 'mode 99']
+];
+$('#quick').innerHTML = QUICK.map(([h, l]) => `<button data-h="${h}">${l}</button>`).join('');
+const parseHex = s => { const t = s.replace(/0x/gi, '').replace(/[^0-9a-f]/gi, ''); return t && t.length % 2 === 0 ? new Uint8Array(t.match(/../g).map(x => parseInt(x, 16))) : null; };
+$('#quick').onclick = e => { const h = e.target.dataset.h; if (h) { $('#raw').value = h; send(parseHex(h)); } };
+$('#rawS').onclick = () => { const b = parseHex($('#raw').value); if (b) send(b); else toast('Even number of hex digits please'); };
+$('#info').onclick = () => { CMD.info(); $('#lab').open = true; };
+$('#clr').onclick = () => { logEl.innerHTML = ''; };
+$('#copy').onclick = async () => { try { await navigator.clipboard.writeText(logEl.innerText); toast('Log copied'); } catch (e) { toast('Copy blocked, select the log text instead'); } };
+
+if (!navigator.bluetooth) $('#nobt').style.display = 'block';
+if (S.kind === 'fx') S.kind = 'color';
+status(); paint(); paintFx(); renderPresets(); renderDevs();
+log('nt', 'ready. frame format ' + S.fmt + '-byte');
+}
+</script>
+</body>
+</html>
